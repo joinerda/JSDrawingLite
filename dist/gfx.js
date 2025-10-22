@@ -3,28 +3,85 @@
 (() => {
   // ---------- Canvas bootstrapping ----------
   const dpr = () => (window.devicePixelRatio || 1);
-  const canvas = document.createElement('canvas');
-  canvas.id = 'gfx-canvas';
-  canvas.style.position = 'fixed';
-  canvas.style.inset = '0';
-  canvas.style.width = '100vw';
-  canvas.style.height = '100vh';
-  canvas.style.display = 'block';
-  document.body.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
+  let canvas = document.getElementById('gfx-canvas'); // <-- use existing if present
+  let ctx;
 
-  function resize() {
-    const w = Math.floor(window.innerWidth);
-    const h = Math.floor(window.innerHeight);
+  function _attachCanvas(el, { width, height, autoResize } = {}) {
+    canvas = el;
+    // If caller provided width/height, set CSS pixel size; otherwise preserve existing.
+    if (typeof width === 'number' && typeof height === 'number') {
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+    }
+    ctx = canvas.getContext('2d');
+    // set up (or remove) resize handler
+    window.removeEventListener('resize', _resize);
+    if (autoResize) {
+      window.addEventListener('resize', _resize, { passive: true });
+    }
+    _resize();
+  }
+
+  function _resize() {
+    // Prefer CSS size if present, else clientWidth/Height, else attributes.
+    const cssW = parseFloat(getComputedStyle(canvas).width);
+    const cssH = parseFloat(getComputedStyle(canvas).height);
+    const w = Math.floor(cssW || canvas.clientWidth || canvas.width || 300);
+    const h = Math.floor(cssH || canvas.clientHeight || canvas.height || 150);
     const r = dpr();
     canvas.width = Math.max(1, Math.floor(w * r));
     canvas.height = Math.max(1, Math.floor(h * r));
-    ctx.setTransform(r, 0, 0, r, 0, 0); // user space in CSS pixels
+    const c = ctx || canvas.getContext('2d');
+    ctx = c;
+    c.setTransform(r, 0, 0, r, 0, 0); // user space in CSS pixels
   }
-  window.addEventListener('resize', resize, { passive: true });
-  resize();
 
-  // ---------- Globals like CodeHS ----------
+  // If no existing canvas, create full-window one (legacy behavior)
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'gfx-canvas';
+    Object.assign(canvas.style, {
+      position: 'fixed',
+      inset: '0',
+      width: '100vw',
+      height: '100vh',
+      display: 'block'
+    });
+    document.body.appendChild(canvas);
+    window.addEventListener('resize', _resize, { passive: true });
+  }
+
+  _attachCanvas(canvas); // initial attach
+
+  // Expose a tiny public init API (without breaking globals)
+  const API = {
+    init(target, opts) {
+      // target: canvas element
+      _attachCanvas(target, opts);
+    },
+    initById(id, opts) {
+      const el = document.getElementById(id);
+      if (!el) throw new Error(`Canvas with id "${id}" not found`);
+      _attachCanvas(el, opts);
+    },
+    setCanvasSize(width, height) {
+      // set CSS size and re-DPR-scale
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+      _resize();
+    },
+    getCanvas() { return canvas; },
+    getContext() { return ctx; },
+  };
+  // make available as a namespace (keeps your globals for shapes intact)
+  window.JSDrawingLite = Object.freeze(API);
+
+  // ... rest of your library (globals getWidth/getHeight, shapes, scene, loop) ...
+  window.getWidth  = () => Math.floor(canvas.width / dpr());
+  window.getHeight = () => Math.floor(canvas.height / dpr());
+
+
+  // ---------- Globals  ----------
   window.getWidth  = () => Math.floor(canvas.width / dpr());
   window.getHeight = () => Math.floor(canvas.height / dpr());
 
